@@ -214,53 +214,58 @@ class ASDLSyntaxError(Exception):
     def __str__(self):
         return 'Syntax error on line {0.lineno}: {0.msg}'.format(self)
 
-def tokenize_asdl(buf):
-    """Tokenize the given buffer. Yield Token objects."""
-    buflen = len(buf)
-    pos = 0
-    lineno = 1
+class AsdlTokenizer(object):
+    # Immutable helper objects for tokenize_asdl.
+    _re_skip_whitespace = re.compile(r'\S')
+    _re_nonword = re.compile(r'\W')
+    _operator_table = {
+        '=': TokenKind.Equals,      ',': TokenKind.Comma,   '?': TokenKind.Question,
+        '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
+        '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace
+    }
+    def __call__(self, buf):
+        """Tokenize the given buffer. Yield Token objects."""
+        buflen = len(buf)
+        pos = 0
+        lineno = 1
 
-    while pos < buflen:
-        m = tokenize_asdl._re_skip_whitespace.search(buf, pos)
-        if not m: return
-        lineno += buf.count('\n', pos, m.start())
-        pos = m.start()
-        c = buf[pos]
-        if c.isalpha():
-            # Some kind of identifier
-            m = tokenize_asdl._re_nonword.search(buf, pos + 1)
-            end = m.end() - 1 if m else buflen
-            id = buf[pos:end]
-            if c.isupper():
-                yield Token(TokenKind.ConstructorId, id, lineno)
-            else:
-                yield Token(TokenKind.TypeId, id, lineno)
-            pos = end
-        elif c == '-':
-            # Potential comment, if followed by another '-'
-            if pos < buflen - 1 and buf[pos + 1] == '-':
+        while pos < buflen:
+            m = self._re_skip_whitespace.search(buf, pos)
+            if not m: return
+            lineno += buf.count('\n', pos, m.start())
+            pos = m.start()
+            c = buf[pos]
+            if c.isalpha():
+                # Some kind of identifier
+                m = self._re_nonword.search(buf, pos + 1)
+                end = m.end() - 1 if m else buflen
+                id = buf[pos:end]
+                if c.isupper():
+                    yield Token(TokenKind.ConstructorId, id, lineno)
+                else:
+                    yield Token(TokenKind.TypeId, id, lineno)
+                pos = end
+            elif self._is_comment(buf, pos, buflen):
                 # Skip until line end
                 pos = buf.find('\n', pos + 1)
                 if pos < 0: pos = buflen
-                continue
-            else:
-                raise ASDLSyntaxError('Invalid operator ' + c, lineno)
-        else:
-            # Operators
-            op_kind = tokenize_asdl._operator_table.get(c, None)
-            if op_kind:
+            elif self._is_operator(c):
+                op_kind = self._operator_table.get(c, None)
                 yield Token(op_kind, c, lineno)
+                pos += 1
             else:
                 raise ASDLSyntaxError('Invalid operator %s' % c, lineno)
-            pos += 1
 
-# Immutable helper objects for tokenize_asdl.
-tokenize_asdl._re_skip_whitespace = re.compile(r'\S')
-tokenize_asdl._re_nonword = re.compile(r'\W')
-tokenize_asdl._operator_table = {
-    '=': TokenKind.Equals,      ',': TokenKind.Comma,   '?': TokenKind.Question,
-    '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
-    '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace}
+    def _is_comment(self, buf, pos, buflen):
+        # Potential comment, if followed by another '-'
+        return buf[pos] == '-' and pos < buflen - 1 and buf[pos + 1] == '-'
+
+    def _is_operator(self, c):
+        return c in self._operator_table
+
+
+
+tokenize_asdl = AsdlTokenizer()
 
 class ASDLParser:
     """Parser for ASDL files.
