@@ -19,7 +19,7 @@
 # [1] "The Zephyr Abstract Syntax Description Language" by Wang, et. al. See
 #     http://asdl.sourceforge.net/
 #-------------------------------------------------------------------------------
-from collections import namedtuple
+from collections import namedtuple, deque
 from enum import Enum
 import re
 
@@ -209,59 +209,49 @@ Token = namedtuple('Token', 'kind value lineno')
 class ASDLSyntaxError(Exception):
     def __init__(self, msg, lineno=None):
         self.msg = msg
-        self.lineno = lineno or '<unknown>'
+        lineno = lineno or '<unknown>'
 
     def __str__(self):
         return 'Syntax error on line {0.lineno}: {0.msg}'.format(self)
 
 class AsdlTokenizer(object):
-    # Immutable helper objects for tokenize_asdl.
-    _re_skip_whitespace = re.compile(r'\S')
-    _re_nonword = re.compile(r'\W')
     _operator_table = {
         '=': TokenKind.Equals,      ',': TokenKind.Comma,   '?': TokenKind.Question,
         '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
         '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace
     }
+    tokens = re.compile(r'-- .*|[\w]+|[=|*,(?{)}]')
+
     def __call__(self, buf):
-        """Tokenize the given buffer. Yield Token objects."""
-        buflen = len(buf)
-        pos = 0
-        lineno = 1
-
-        while pos < buflen:
-            m = self._re_skip_whitespace.search(buf, pos)
-            if not m: return
-            lineno += buf.count('\n', pos, m.start())
-            pos = m.start()
-            c = buf[pos]
-            if c.isalpha():
-                # Some kind of identifier
-                m = self._re_nonword.search(buf, pos + 1)
-                end = m.end() - 1 if m else buflen
-                id = buf[pos:end]
-                if c.isupper():
-                    yield Token(TokenKind.ConstructorId, id, lineno)
+        lineno = 0
+        lines = deque(buf.split('\n'))
+        del buf
+        while lines:
+            lineno+= 1
+            line = lines.popleft().strip()
+            if self._ignore(line): continue
+            tokens = deque(self.tokens.findall(line))
+            while tokens:
+                token = tokens.popleft()
+                if self._ignore(token): continue
+                if token[0].isalpha():
+                    yield self._alpha_token(token, lineno)
+                elif self._is_operator(token):
+                    op_kind = self._operator_table.get(token[0], None)
+                    yield Token(op_kind, token[0], lineno)
                 else:
-                    yield Token(TokenKind.TypeId, id, lineno)
-                pos = end
-            elif self._is_comment(buf, pos, buflen):
-                # Skip until line end
-                pos = buf.find('\n', pos + 1)
-                if pos < 0: pos = buflen
-            elif self._is_operator(c):
-                op_kind = self._operator_table.get(c, None)
-                yield Token(op_kind, c, lineno)
-                pos += 1
-            else:
-                raise ASDLSyntaxError('Invalid operator %s' % c, lineno)
+                    raise ASDLSyntaxError('Invalid token %s' % token, lineno)
+        raise StopIteration()
 
-    def _is_comment(self, buf, pos, buflen):
-        # Potential comment, if followed by another '-'
-        return buf[pos] == '-' and pos < buflen - 1 and buf[pos + 1] == '-'
+    def _alpha_token(self, word, lineno):
+        token_kind = word[0].isupper() and TokenKind.ConstructorId or TokenKind.TypeId
+        return Token(token_kind, word, lineno)
 
     def _is_operator(self, c):
         return c in self._operator_table
+
+    def _ignore(self, string):
+        return  len(string) == 0 or string.startswith('--')
 
 
 
