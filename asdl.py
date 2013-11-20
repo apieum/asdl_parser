@@ -274,12 +274,10 @@ class ASDLParser:
         return self._parse_module()
 
     def _parse_module(self):
-        if self._at_keyword('module'):
-            self._advance()
-        else:
-            raise ASDLSyntaxError(
-                'Expected "module" (found {})'.format(self.cur_token.value),
-                self.cur_token.lineno)
+        if not self._at_keyword('module'):
+            message = 'Expected "module" (found {})'.format(self.cur_token.value)
+            raise ASDLSyntaxError(message, self.cur_token.lineno)
+        self._advance()
         name = self._match(self._id_kinds)
         self._match(TokenKind.LBrace)
         defs = self._parse_definitions()
@@ -296,20 +294,20 @@ class ASDLParser:
         return defs
 
     def _parse_type(self):
+        # If we see a (, it's a product
         if self.cur_token.kind == TokenKind.LParen:
-            # If we see a (, it's a product
             return self._parse_product()
-        else:
-            # Otherwise it's a sum. Look for ConstructorId
-            sumlist = [Constructor(self._match(TokenKind.ConstructorId),
-                                   self._parse_optional_fields())]
-            while self.cur_token.kind  == TokenKind.Pipe:
-                # More constructors
-                self._advance()
-                sumlist.append(Constructor(
-                                self._match(TokenKind.ConstructorId),
-                                self._parse_optional_fields()))
-            return Sum(sumlist, self._parse_optional_attributes())
+
+        # Otherwise it's a sum. Look for ConstructorId
+        sumlist = [Constructor(self._match(TokenKind.ConstructorId),
+                               self._parse_optional_fields())]
+        while self.cur_token.kind  == TokenKind.Pipe:
+            # More constructors
+            self._advance()
+            sumlist.append(Constructor(
+                            self._match(TokenKind.ConstructorId),
+                            self._parse_optional_fields()))
+        return Sum(sumlist, self._parse_optional_attributes())
 
     def _parse_product(self):
         return Product(self._parse_fields(), self._parse_optional_attributes())
@@ -333,15 +331,11 @@ class ASDLParser:
     def _parse_optional_fields(self):
         if self.cur_token.kind == TokenKind.LParen:
             return self._parse_fields()
-        else:
-            return None
 
     def _parse_optional_attributes(self):
         if self._at_keyword('attributes'):
             self._advance()
             return self._parse_fields()
-        else:
-            return None
 
     def _parse_optional_field_quantifier(self):
         is_seq, is_opt = False, False
@@ -374,9 +368,7 @@ class ASDLParser:
         * Returns the value of the current token
         * Reads in the next token
         """
-        if (isinstance(kind, tuple) and self.cur_token.kind in kind or
-            self.cur_token.kind == kind
-            ):
+        if self._token_of_kind(self.cur_token, kind):
             value = self.cur_token.value
             self._advance()
             return value
@@ -388,3 +380,6 @@ class ASDLParser:
     def _at_keyword(self, keyword):
         return (self.cur_token.kind == TokenKind.TypeId and
                 self.cur_token.value == keyword)
+
+    def _token_of_kind(self, token, kind):
+        return token.kind == kind or token.kind in kind
