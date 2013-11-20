@@ -94,6 +94,17 @@ class TestAsdlParser(unittest.TestCase):
         v.visit(self.types['mod'])
         self.assertEqual(v.names_with_seq, ['Module', 'Interactive', 'Suite'])
 
+    def test_parser_invalid_token_error(self):
+        asdl_fragment = """
+module Python
+{
+    mod -= Module(stmt* body)
+"""
+        parser = asdl.ASDLParser()
+        expected = 'Syntax error on line 3: Invalid token -='
+        with self.assertRaisesRegex(asdl.ASDLSyntaxError, expected):
+            parser.parse(asdl_fragment)
+
 
 if __name__ == '__main__':
     unittest.main()

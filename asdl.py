@@ -209,7 +209,7 @@ Token = namedtuple('Token', 'kind value lineno')
 class ASDLSyntaxError(Exception):
     def __init__(self, msg, lineno=None):
         self.msg = msg
-        lineno = lineno or '<unknown>'
+        self.lineno = lineno or '<unknown>'
 
     def __str__(self):
         return 'Syntax error on line {0.lineno}: {0.msg}'.format(self)
@@ -221,7 +221,7 @@ def asdl_tokenizer_builder():
         '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
         '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace
     }
-    tokens = re.compile(r'-- .*|[\w]+|[=|*,(?{)}]')
+    tokens = re.compile(r'--.*|\w+|[=|*,(?{)}]|\S+')
     ignore = lambda token: len(token) == 0 or token.startswith('--')
     def get_token_kind(token):
         if token in operator_table:
@@ -235,7 +235,7 @@ def asdl_tokenizer_builder():
             if ignore(token): continue
             token_kind = get_token_kind(token)
             if token_kind is None:
-                raise ASDLSyntaxError('Invalid token %s' % token, lineno)
+                raise ASDLSyntaxError(msg='Invalid token %s' % token, lineno=lineno)
             yield Token(token_kind, token, lineno)
         raise StopIteration()
 
@@ -244,10 +244,10 @@ def asdl_tokenizer_builder():
         def tokenize():
             lineno = 0
             while lines:
-                lineno += 1
                 line = lines.popleft().strip()
                 for token in line_tokens(line, lineno):
                     yield token
+                lineno += 1
             raise StopIteration()
         return tokenize
     return init
