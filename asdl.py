@@ -214,48 +214,45 @@ class ASDLSyntaxError(Exception):
     def __str__(self):
         return 'Syntax error on line {0.lineno}: {0.msg}'.format(self)
 
-class AsdlTokenizer(object):
-    _operator_table = {
+
+def asdl_tokenizer_builder():
+    operator_table = {
         '=': TokenKind.Equals,      ',': TokenKind.Comma,   '?': TokenKind.Question,
         '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
         '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace
     }
     tokens = re.compile(r'-- .*|[\w]+|[=|*,(?{)}]')
+    ignore = lambda token: len(token) == 0 or token.startswith('--')
+    def get_token_kind(token):
+        if token in operator_table:
+            return operator_table[token]
+        if token[0].isalpha():
+            return token[0].isupper() and TokenKind.ConstructorId or TokenKind.TypeId
 
-    def __call__(self, buf):
-        lineno = 0
-        lines = deque(buf.split('\n'))
-        del buf
-        while lines:
-            lineno+= 1
-            line = lines.popleft().strip()
-            if self._ignore(line): continue
-            tokens = deque(self.tokens.findall(line))
-            while tokens:
-                token = tokens.popleft()
-                if self._ignore(token): continue
-                if token[0].isalpha():
-                    yield self._alpha_token(token, lineno)
-                elif self._is_operator(token):
-                    op_kind = self._operator_table.get(token[0], None)
-                    yield Token(op_kind, token[0], lineno)
-                else:
-                    raise ASDLSyntaxError('Invalid token %s' % token, lineno)
+    def line_tokens(line, lineno):
+        if ignore(line): return
+        for token in tokens.findall(line):
+            if ignore(token): continue
+            token_kind = get_token_kind(token)
+            if token_kind is None:
+                raise ASDLSyntaxError('Invalid token %s' % token, lineno)
+            yield Token(token_kind, token, lineno)
         raise StopIteration()
 
-    def _alpha_token(self, word, lineno):
-        token_kind = word[0].isupper() and TokenKind.ConstructorId or TokenKind.TypeId
-        return Token(token_kind, word, lineno)
+    def init(buf):
+        lines = deque(buf.split('\n'))
+        def tokenize():
+            lineno = 0
+            while lines:
+                lineno += 1
+                line = lines.popleft().strip()
+                for token in line_tokens(line, lineno):
+                    yield token
+            raise StopIteration()
+        return tokenize
+    return init
 
-    def _is_operator(self, c):
-        return c in self._operator_table
-
-    def _ignore(self, string):
-        return  len(string) == 0 or string.startswith('--')
-
-
-
-tokenize_asdl = AsdlTokenizer()
+asdl_tokenizer_builder = asdl_tokenizer_builder()
 
 class ASDLParser:
     """Parser for ASDL files.
@@ -271,7 +268,8 @@ class ASDLParser:
     def parse(self, buf):
         """Parse the ASDL in the buffer and return an AST with a Module root.
         """
-        self._tokenizer = tokenize_asdl(buf)
+        tokenize_asdl = asdl_tokenizer_builder(buf)
+        self._tokenizer = tokenize_asdl()
         self._advance()
         return self._parse_module()
 
