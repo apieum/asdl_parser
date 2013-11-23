@@ -215,14 +215,20 @@ class ASDLSyntaxError(Exception):
         return 'Syntax error on line {0.lineno}: {0.msg}'.format(self)
 
 
-def asdl_tokenizer_builder():
+def asdl_tokenizer():
     operator_table = {
         '=': TokenKind.Equals,      ',': TokenKind.Comma,   '?': TokenKind.Question,
         '|': TokenKind.Pipe,        '(': TokenKind.LParen,  ')': TokenKind.RParen,
         '*': TokenKind.Asterisk,    '{': TokenKind.LBrace,  '}': TokenKind.RBrace
     }
-    tokens = re.compile(r'--.*|\w+|[=|*,(?{)}]|\S+')
+    comment_token = '--.*'
+    alpha_token = '\w+'
+    operator_token = '[%s]' % ''.join(operator_table.keys())
+    invalid_token = '\S+'
+    tokens = re.compile(r'|'.join([comment_token, alpha_token, operator_token, invalid_token]))
+
     ignore = lambda token: len(token) == 0 or token.startswith('--')
+
     def get_token_kind(token):
         if token in operator_table:
             return operator_table[token]
@@ -245,14 +251,13 @@ def asdl_tokenizer_builder():
             lineno = 0
             while lines:
                 line = lines.popleft().strip()
-                for token in line_tokens(line, lineno):
-                    yield token
+                yield from line_tokens(line, lineno)
                 lineno += 1
             raise StopIteration()
         return tokenize
     return init
 
-asdl_tokenizer_builder = asdl_tokenizer_builder()
+asdl_tokenizer = asdl_tokenizer()
 
 class ASDLParser:
     """Parser for ASDL files.
@@ -268,7 +273,7 @@ class ASDLParser:
     def parse(self, buf):
         """Parse the ASDL in the buffer and return an AST with a Module root.
         """
-        tokenize_asdl = asdl_tokenizer_builder(buf)
+        tokenize_asdl = asdl_tokenizer(buf)
         self._tokenizer = tokenize_asdl()
         self._advance()
         return self._parse_module()
