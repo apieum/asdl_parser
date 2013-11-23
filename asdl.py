@@ -229,20 +229,19 @@ def asdl_tokenizer():
 
     ignore = lambda token: len(token) == 0 or token.startswith('--')
 
-    def get_token_kind(token):
+    def token_kind(token, lineno):
         if token in operator_table:
             return operator_table[token]
         if token[0].isalpha():
             return token[0].isupper() and TokenKind.ConstructorId or TokenKind.TypeId
+        raise ASDLSyntaxError('Invalid token %s' % token, lineno)
 
     def line_tokens(line, lineno):
         if ignore(line): return
         for token in tokens.findall(line):
             if ignore(token): continue
-            token_kind = get_token_kind(token)
-            if token_kind is None:
-                raise ASDLSyntaxError(msg='Invalid token %s' % token, lineno=lineno)
-            yield Token(token_kind, token, lineno)
+            kind = token_kind(token, lineno)
+            yield Token(kind, token, lineno)
         raise StopIteration()
 
     def init(buf):
